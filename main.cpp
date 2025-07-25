@@ -277,7 +277,13 @@ void print_memory_usage() {
     }
 }
 
-int main() {
+int main(const int argc, char *argv[]) {
+    string filename;
+    if (argc != 2) {
+        cerr << "Please provide a csv containing the puzzles you want solved.";
+    } else {
+        filename = argv[1];
+    }
     //Increase stack size
     struct rlimit rl;
     rl.rlim_cur = 16 * 1024 * 1024;
@@ -285,17 +291,17 @@ int main() {
     setrlimit(RLIMIT_STACK, &rl);
 
     auto start = std::chrono::system_clock::now();
-    puzzle_reader x = puzzle_reader("puzzles.csv");
+    puzzle_reader x = puzzle_reader(filename);
     auto solving_start = std::chrono::system_clock::now();
     double read_time = (std::chrono::system_clock::now() - start).count()/1000000.0;
     vector<double> times {};
-    for (int i = 2; i < 1002; ++i) {
+    for (int i = 2; i < x.num_puzzles + 2; ++i) {
         cout << "puzzle " << i << ":\n";
         double time = solve_and_check(x, i);
         times.push_back(time);
     }
 
-    cout << "Loaded  " <<  x.num_puzzles << " puzzles in " << read_time << " ms" << std::endl;
+    cout << "Loaded  " <<  x.num_puzzles << " puzzles from " << filename <<" in " << read_time << " ms" << std::endl;
     print_stats(times);
     cout << "Total solving time including printing overhead: " << (std::chrono::system_clock::now() - solving_start).count() / 1000000.0 << " ms" << std::endl;
     print_memory_usage();
