@@ -76,15 +76,16 @@ class puzzle_reader {
 
 class puzzle_solver {
     public:
-        static bool no_repeats(const array<char, 9> list) {
-            std::set<char> items;
+        static bool no_repeats(const array<char, 9> &list) {
+            array<bool,10> seen{};
             for (int i = 0; i < 9; i++) {
                 if (list[i] == 0) {
                     continue;
                 }
-                if (!items.insert(list[i]).second) {
+                if (seen[list[i]]) {
                     return false;
                 }
+                seen[list[i]] = true;
             }
             return true;
         }
