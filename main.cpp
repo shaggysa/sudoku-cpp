@@ -17,7 +17,7 @@ namespace fs = std::filesystem;
 using std::string, std::cout, std::cerr, std::ifstream, std::vector, std::stringstream, std::array;
 
 struct puzzle {
-    array<char, 81> puzz;
+    array <char,81> puzz;
     vector<int> blank_positions;
     std::unordered_map<int, vector<char>> possibilities;
     std::unordered_map<int, int> current_pos;
@@ -75,105 +75,108 @@ class puzzle_reader {
 };
 
 class puzzle_solver {
-    public:
-        static bool no_repeats(const array<char, 9> &list) {
-            array<bool,10> seen{};
-            for (int i = 0; i < 9; i++) {
-                if (list[i] == 0) {
-                    continue;
-                }
-                if (seen[list[i]]) {
-                    return false;
-                }
-                seen[list[i]] = true;
+public:
+    static bool no_repeats(const char list[9]) {
+        bool seen[10] = {false};
+        for (int i = 0; i < 9; i++) {
+            if (list[i] == 0) {
+                continue;
             }
+            if (seen[list[i]]) {
+                return false;
+            }
+            seen[list[i]] = true;
+        }
+        return true;
+    }
+
+    static bool position_valid(const array<char,81> &puzzle, const int position) {
+        const int row = position / 9;
+        const int col = position % 9;
+
+        const int root_row = (row/3) * 3;
+        const int root_col = (col/3) * 3;
+        const int root_pos = (root_row * 9) + root_col;
+
+        char col_to_check[9];
+        char row_to_check[9];
+        const char square_to_check[] {puzzle[root_pos], puzzle[root_pos + 1], puzzle[root_pos + 2], puzzle[root_pos + 9], puzzle[root_pos + 10], puzzle[root_pos + 11], puzzle[root_pos + 18], puzzle[root_pos + 19], puzzle[root_pos + 20]};
+
+        for (int i = 0; i < 9; i++) {
+            col_to_check[i] = puzzle[i + (row * 9)];
+            row_to_check[i] = puzzle[col + (i * 9)];
+        }
+        if (no_repeats(col_to_check) && no_repeats(row_to_check) && no_repeats(square_to_check)) {
             return true;
+
+        }
+        return false;
+    }
+
+    static vector<char> get_possibilities(array<char, 81> &puzzle, const int position) {
+        const int row = position / 9;
+        const int col = position % 9;
+
+        const int root_row = (row/3) * 3;
+        const int root_col = (col/3) * 3;
+        const int root_pos = (root_row * 9) + root_col;
+
+        array<char, 26> items {puzzle[root_pos], puzzle[root_pos + 1], puzzle[root_pos + 2], puzzle[root_pos + 9], puzzle[root_pos + 10], puzzle[root_pos + 11], puzzle[root_pos + 18], puzzle[root_pos + 19], puzzle[root_pos + 20]};
+        for (int i = 0; i < 9; i++) {
+            items[i + 8] = puzzle[i + (row * 9)];
+            items[i + 17] = puzzle[col + (i * 9)];
         }
 
-        static bool position_valid(const array<char, 81> &puzzle, const int position) {
-            const int row = position / 9;
-            const int col = position % 9;
+        bool seen[10] = {false};
 
-            const int root_row = (row/3) * 3;
-            const int root_col = (col/3) * 3;
-            const int root_pos = (root_row * 9) + root_col;
-
-            array<char, 9> col_to_check {};
-            array<char, 9> row_to_check {};
-            const array square_to_check {puzzle[root_pos], puzzle[root_pos + 1], puzzle[root_pos + 2], puzzle[root_pos + 9], puzzle[root_pos + 10], puzzle[root_pos + 11], puzzle[root_pos + 18], puzzle[root_pos + 19], puzzle[root_pos + 20]};
-
-            for (int i = 0; i < 9; i++) {
-                col_to_check[i] = puzzle[i + (row * 9)];
-                row_to_check[i] = puzzle[col + (i * 9)];
+        for (char item:items) {
+            if (item == 0) {
+                continue;
             }
-            if (no_repeats(col_to_check) && no_repeats(row_to_check) && no_repeats(square_to_check)) {
-                return true;
-
+            seen[item] = true;
+        }
+        vector<char> possibilities;
+        for (char i = 1; i <= 9; i++) {
+            if (!seen[i]) {
+                possibilities.push_back(i);
             }
-            return false;
+        }
+        return possibilities;
+    }
+
+
+    static puzzle solver_pre_init(const array<char, 81> &puzzle) {
+        struct puzzle p = {puzzle};
+        for (int i = 0; i < 81; ++i) {
+            if (puzzle.at(i) == 0) {
+                p.blank_positions.push_back(i);
+            }
         }
 
+        vector<int> to_remove{};
 
-        static puzzle solver_pre_init(const array<char, 81> &puzzle) {
-            struct puzzle p = {puzzle};
-            for (int i = 0; i < 81; ++i) {
-                if (puzzle.at(i) == 0) {
-                    p.blank_positions.push_back(i);
-                }
+        for (int item:p.blank_positions) {
+            p.possibilities[item] = get_possibilities(p.puzz, item);
+            if (p.possibilities[item].size() == 1) {
+                p.puzz[item] = p.possibilities[item][0];
+                to_remove.push_back(item);
+            } else {
+                p.current_pos[item] = -1;
             }
-
-            while (1) {
-                vector<int> to_remove;
-                for (int pos : p.blank_positions) {
-                    int solution = 0;
-                    bool found = false;
-                    for (int j = 1; j < 10; ++j) {
-                        p.puzz[pos] = j;
-                        if (position_valid(p.puzz, pos)) {
-                            if (found) {
-                                found = false;
-                                p.puzz[pos] = 0;
-                                break;
-                            } else {
-                                found = true;
-                                solution = j;
-                            }
-                        }
-                    }
-                    if (found) {
-                        p.puzz[pos] = solution;
-                        to_remove.push_back(pos);
-                    }
-                }
-                if (to_remove.empty()) {
-                    if (p.blank_positions.empty()) {
-                        p.solved = true;
-                    }
-                    break;
-                }
-                for (int item : to_remove) {
-                    remove(p.blank_positions.begin(), p.blank_positions.end(), item);
-                    p.blank_positions.pop_back();
-                }
+        }
+        if (to_remove.empty()) {
+            p.solved = true;
+        } else {
+            for (int item : to_remove) {
+                remove(p.blank_positions.begin(), p.blank_positions.end(), item);
+                p.blank_positions.pop_back();
             }
-            return p;
         }
 
-        static puzzle solver_forward_init(puzzle &p) {
-                for (int pos : p.blank_positions) {
-                    vector<char> temp_possibilities{};
-                    for (int i = 1; i < 10; ++i) {
-                        p.puzz[pos] = i;
-                        if (position_valid(p.puzz, pos)) {
-                            temp_possibilities.push_back(i);
-                        }
-                    }
-                    p.puzz[pos] = 0;
-                    p.possibilities[pos] = temp_possibilities;
-                    p.current_pos[pos] = -1;
-                }
-                return p;
-            }
+    return p;
+}
+
+
 
         static array<char,81> unwrapped_solve(puzzle &p, const int position) {
             if (position < 0) {
@@ -203,12 +206,13 @@ class puzzle_solver {
 
         static array<char, 81> solve(array<char, 81> puzz) {
             puzzle p = solver_pre_init(puzz);
-            p = solver_forward_init(p);
+            if (p.solved)
+                return p.puzz;
             return unwrapped_solve(p, 0);
         }
 };
 
-void print_puzzle(const array<char, 81>& puzzle) {
+void print_puzzle(const array<char,81> &puzzle) {
     for (int i = 0; i < 9; i++) {
         for (int j = 0; j < 9; j++) {
             cout << static_cast<int>(puzzle[i*9+j])
