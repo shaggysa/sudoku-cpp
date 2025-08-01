@@ -6,11 +6,8 @@
 #include <array>
 #include <chrono>
 #include <ctime>
-#include <set>
-#include <unordered_map>
 #include <bits/stdc++.h>
 #include <sys/resource.h>
-#include <unistd.h>
 
 namespace fs = std::filesystem;
 
@@ -19,8 +16,9 @@ using std::string, std::cout, std::cerr, std::ifstream, std::vector, std::string
 struct puzzle {
     array <char,81> puzz;
     vector<int> blank_positions;
-    std::unordered_map<int, vector<char>> possibilities;
-    std::unordered_map<int, int> current_pos;
+    vector<vector<char>> possibilities;
+    vector<int> current_pos;
+    vector<array<bool,10>> cached_possibilities;
     bool solved = false;
 };
 
@@ -75,73 +73,34 @@ class puzzle_reader {
 
 class puzzle_solver {
 public:
-    static bool no_repeats(const char list[9]) {
-        bool seen[10] = {false};
-        for (int i = 0; i < 9; i++) {
-            if (list[i] == 0) {
-                continue;
-            }
-            if (seen[list[i]]) {
-                return false;
-            }
-            seen[list[i]] = true;
-        }
-        return true;
-    }
-
-    static bool position_valid(const array<char,81> &puzzle, const int position) {
-        const int row = position / 9;
-        const int col = position % 9;
-
-        const int root_row = (row/3) * 3;
-        const int root_col = (col/3) * 3;
-        const int root_pos = (root_row * 9) + root_col;
-
-        char col_to_check[9];
-        char row_to_check[9];
-        const char square_to_check[] {puzzle[root_pos], puzzle[root_pos + 1], puzzle[root_pos + 2], puzzle[root_pos + 9], puzzle[root_pos + 10], puzzle[root_pos + 11], puzzle[root_pos + 18], puzzle[root_pos + 19], puzzle[root_pos + 20]};
-
-        for (int i = 0; i < 9; i++) {
-            col_to_check[i] = puzzle[i + (row * 9)];
-            row_to_check[i] = puzzle[col + (i * 9)];
-        }
-        if (no_repeats(col_to_check) && no_repeats(row_to_check) && no_repeats(square_to_check)) {
-            return true;
-
-        }
-        return false;
-    }
-
-    static vector<char> get_possibilities(const array<char, 81> &puzzle, const int position) {
-        const int row = position / 9;
-        const int col = position % 9;
-
-        const int root_row = (row/3) * 3;
-        const int root_col = (col/3) * 3;
-        const int root_pos = (root_row * 9) + root_col;
-
-        array<char, 26> items {puzzle[root_pos], puzzle[root_pos + 1], puzzle[root_pos + 2], puzzle[root_pos + 9], puzzle[root_pos + 10], puzzle[root_pos + 11], puzzle[root_pos + 18], puzzle[root_pos + 19], puzzle[root_pos + 20]};
-        for (int i = 0; i < 9; i++) {
-            items[i + 8] = puzzle[i + (row * 9)];
-            items[i + 17] = puzzle[col + (i * 9)];
-        }
-
-        bool seen[10] = {false};
-
-        for (char item:items) {
-            if (item == 0) {
-                continue;
-            }
-            seen[item] = true;
-        }
+    static vector<char> get_possbililities(const array<char,81> &puzzle, const int position) {
+        array<bool,10> seen;
+        seen.fill(false);
         vector<char> possibilities;
-        for (char i = 1; i <= 9; i++) {
+        const int row = position / 9;
+        const int col = position % 9;
+
+        const int root_row = (row/3) * 3;
+        const int root_col = (col/3) * 3;
+        for (int r = root_row; r < root_row + 3; r++) {
+            for (int c = root_col; c < root_col + 3; c++) {
+                seen[puzzle[r*9+c]] = true;
+            }
+        }
+
+        for (int i = 0; i < 9; i++) {
+            seen[puzzle[i + (row * 9)]] = true;
+            seen[puzzle[col + (i * 9)]] = true;
+        }
+
+        for (int i = 1; i < 10; i++) {
             if (!seen[i]) {
                 possibilities.push_back(i);
             }
         }
         return possibilities;
     }
+
 
     static puzzle solver_pre_init(const array<char, 81> &puzzle) {
         struct puzzle p = {puzzle};
@@ -151,32 +110,65 @@ public:
             }
         }
 
-        vector<int> to_remove{};
-
-        for (int item:p.blank_positions) {
-            p.possibilities[item] = get_possibilities(p.puzz, item);
-            if (p.possibilities[item].size() == 1) {
-                p.puzz[item] = p.possibilities[item][0];
-                to_remove.push_back(item);
-            } else {
-                p.current_pos[item] = -1;
+        while (1) {
+            vector<int> to_remove{};
+            for (int item:p.blank_positions) {
+                vector<char> possibilities = get_possbililities(p.puzz, item);
+                if (possibilities.size() == 1) {
+                    p.puzz[item] = possibilities[0];
+                    to_remove.push_back(item);
+                }
             }
-        }
-        if (to_remove.empty()) {
-            p.solved = true;
-        } else {
+
+            if (to_remove.size() == p.blank_positions.size()) {
+                p.solved = true;
+                return p;
+            } if (to_remove.empty()) {
+                for (int i = 0; i < p.blank_positions.size(); i++) {
+                    p.possibilities.push_back(get_possbililities(p.puzz, p.blank_positions[i]));
+                    p.current_pos.push_back(-1);
+                }
+                return p;
+            }
             for (int item : to_remove) {
                 remove(p.blank_positions.begin(), p.blank_positions.end(), item);
                 p.blank_positions.pop_back();
             }
         }
+    }
 
-    return p;
-}
+    static array<bool,10> get_possbililities_as_array(const array<char,81> &puzzle, const int position) {
+        array<bool,10> seen{};
+        seen.fill(true);
+        const int row = position / 9;
+        const int col = position % 9;
 
-        static array<char,81> unwrapped_solve(puzzle &p) {
+        const int root_row = (row/3) * 3;
+        const int root_col = (col/3) * 3;
+        for (int r = root_row; r < root_row + 3; r++) {
+            for (int c = root_col; c < root_col + 3; c++) {
+                seen[puzzle[r*9+c]] = false;
+            }
+        }
+
+        for (int i = 0; i < 9; i++) {
+            seen[puzzle[i + (row * 9)]] = false;
+            seen[puzzle[col + (i * 9)]] = false;
+        }
+
+        return seen;
+    }
+
+    static array<char,81> solve(const array<char, 81> &puzz) {
+        puzzle p = solver_pre_init(puzz);
+        if (p.solved) {
+            return p.puzz;
+        }
+
         int position = 0;
         int max_len = p.blank_positions.size();
+
+        bool progressed_forward = true;
 
         while (position < max_len) {
             bool found = false;
@@ -186,20 +178,30 @@ public:
                 return p.puzz;
             }
             const int spot = p.blank_positions[position];
-            const int max = p.possibilities[spot].size() - 1;
-            while (p.current_pos[spot] < max) {
-                ++p.current_pos[spot];
-                p.puzz[spot] = p.possibilities[spot][p.current_pos[spot]];
-                if (position_valid(p.puzz, spot)) {
+            const int max = p.possibilities[position].size() - 1;
+            if (progressed_forward) {
+                if (position == p.cached_possibilities.size()) {
+                    p.cached_possibilities.push_back(get_possbililities_as_array(p.puzz, spot));
+                } else {
+                    p.cached_possibilities[position] = get_possbililities_as_array(p.puzz, spot);
+                }
+            }
+
+            while (p.current_pos[position] < max) {
+                ++p.current_pos[position];
+                if (p.cached_possibilities[position][p.possibilities[position][p.current_pos[position]]]) {
+                    p.puzz[spot] = p.possibilities[position][p.current_pos[position]];
                     found = true;
                     ++position;
+                    progressed_forward = true;
                     break;
                 }
             }
             if (!found) {
                 p.puzz[spot] = 0;
-                p.current_pos[spot] = -1;
+                p.current_pos[position] = -1;
                 --position;
+                progressed_forward = false;
             }
 
         }
@@ -208,118 +210,112 @@ public:
     }
 
 
-        static array<char, 81> solve(array<char, 81> puzz) {
-            puzzle p = solver_pre_init(puzz);
-            if (p.solved)
-                return p.puzz;
-            return unwrapped_solve(p);
+    static void print_puzzle(const array<char,81> &puzzle) {
+        for (int i = 0; i < 9; i++) {
+            for (int j = 0; j < 9; j++) {
+                cout << static_cast<int>(puzzle[i*9+j])
+                << "  ";
+            }
+            cout << "\n";
         }
+    }
+
+    static double solve_and_check(const puzzle_reader &puzzles, const int line_number) {
+        cout << "Unsolved:\n";
+        print_puzzle(puzzles.get_unsolved(line_number));
+        auto start = std::chrono::system_clock::now();
+        array<char,81> solved = puzzle_solver::solve(puzzles.get_unsolved(line_number));
+        auto time = (std::chrono::system_clock::now() - start).count()/1000000.0;
+        cout << "\nSolved:\n";
+        print_puzzle(solved);
+        if (!(solved == puzzles.get_solved(line_number))) {
+            cerr << "Solve failed\n";
+            throw::std::runtime_error("Solve failed");
+        }
+        return time;
+    }
 };
+    bool comp (double a, double b) {
+        return a > b;
+    }
 
-void print_puzzle(const array<char,81> &puzzle) {
-    for (int i = 0; i < 9; i++) {
-        for (int j = 0; j < 9; j++) {
-            cout << static_cast<int>(puzzle[i*9+j])
-            << "  ";
+    void print_time(double time) {
+        int seconds = time/1000;
+        time -= seconds*1000;
+        int minutes = seconds/60;
+        seconds -= minutes*60;
+        cout << minutes << " minutes, " << seconds << " seconds, " << time << " milliseconds\n";
+    }
+
+    void print_stats (vector<double> &times) {
+        double min = times[0];
+        double max = times[0];
+        double total = 0;
+        double median;
+
+        std::ranges::sort(times, comp);
+
+        if (times.size() % 2 == 0) {
+            median = (times[times.size()/2] + times[times.size()/2 - 1]) / 2.0;
+        } else {
+            median = times[times.size()/2];
         }
-        cout << "\n";
-    }
-}
-
-double solve_and_check(const puzzle_reader &puzzles, const int line_number) {
-    cout << "Unsolved:\n";
-    print_puzzle(puzzles.get_unsolved(line_number));
-    auto start = std::chrono::system_clock::now();
-    array<char,81> solved = puzzle_solver::solve(puzzles.get_unsolved(line_number));
-    auto time = (std::chrono::system_clock::now() - start).count()/1000000.0;
-    cout << "\nSolved:\n";
-    print_puzzle(solved);
-    if (!(solved == puzzles.get_solved(line_number))) {
-        cerr << "Solve failed\n";
-    }
-    return time;
-}
-
-bool comp (double a, double b) {
-    return a > b;
-}
-
-void print_time(double time) {
-    int seconds = time/1000;
-    time -= seconds*1000;
-    int minutes = seconds/60;
-    seconds -= minutes*60;
-    cout << minutes << " minutes, " << seconds << " seconds, " << time << " milliseconds\n";
-}
-
-void print_stats (vector<double> &times) {
-    double min = times[0];
-    double max = times[0];
-    double total = 0;
-    double median;
-
-    std::ranges::sort(times, comp);
-
-    if (times.size() % 2 == 0) {
-        median = (times[times.size()/2] + times[times.size()/2 - 1]) / 2.0;
-    } else {
-        median = times[times.size()/2];
-    }
-    for (double const time : times) {
-        if (time < min) {
-            min = time;
-        } else if (time > max) {
-            max = time;
+        for (double const time : times) {
+            if (time < min) {
+                min = time;
+            } else if (time > max) {
+                max = time;
+            }
+            total += time;
         }
-        total += time;
+        cout << "Solving Stats (" << times.size() << " puzzles):\n";
+        cout << "total: ";
+        print_time(total);
+        cout << "mean: " << total / times.size() << " ms\n"
+             << "median: " << median << "\n"
+             << "min: " << min << " ms\n"
+             << "max: " << max << " ms\n"
+             << "median: " << median << " ms\n";
+
     }
-    cout << "Solving Stats (" << times.size() << " puzzles):\n";
-    cout << "total: ";
-    print_time(total);
-    cout << "mean: " << total / times.size() << " ms\n"
-         << "median: " << median << "\n"
-         << "min: " << min << " ms\n"
-         << "max: " << max << " ms\n"
-         << "median: " << median << " ms\n";
 
-}
-
-void print_memory_usage() {
-    std::ifstream status ("/proc/self/status");
-    std::string line;
-    std::getline(status, line);
-    while (std::getline(status, line)) {
-        if (line.substr(0, 6) == "VmRSS:") {
-            cout << line << "\n";
+    void print_memory_usage() {
+        std::ifstream status ("/proc/self/status");
+        std::string line;
+        std::getline(status, line);
+        while (std::getline(status, line)) {
+            if (line.substr(0, 6) == "VmRSS:") {
+                cout << line << "\n";
+            }
         }
     }
-}
 
-int main(const int argc, char *argv[]) {
-    string filename;
-    if (argc != 2) {
-        cerr << "Please provide a csv containing the puzzles you want solved.";
-    } else {
-        filename = argv[1];
+    int main(const int argc, char *argv[]) {
+        string filename;
+        if (argc != 2) {
+            cerr << "Please provide a csv containing the puzzles you want solved.";
+        } else {
+            filename = argv[1];
+        }
+
+        auto start = std::chrono::system_clock::now();
+        puzzle_reader x = puzzle_reader(filename);
+        auto solving_start = std::chrono::system_clock::now();
+        double read_time = (std::chrono::system_clock::now() - start).count()/1000000.0;
+        vector<double> times {};
+        for (int i = 2; i < x.num_puzzles + 2; ++i) {
+            cout << "line " << i << ":\n";
+            double time = puzzle_solver::solve_and_check(x, i);
+            times.push_back(time);
+        }
+
+        cout << "Loaded  " <<  x.num_puzzles << " puzzles from " << filename <<" in ";
+        print_time(read_time);
+
+        print_stats(times);
+        cout << "Total solving time including printing overhead: " << (std::chrono::system_clock::now() - solving_start).count() / 1000000.0 << " ms" << std::endl;
+        print_memory_usage();
+
     }
 
-    auto start = std::chrono::system_clock::now();
-    puzzle_reader x = puzzle_reader(filename);
-    auto solving_start = std::chrono::system_clock::now();
-    double read_time = (std::chrono::system_clock::now() - start).count()/1000000.0;
-    vector<double> times {};
-    for (int i = 2; i < x.num_puzzles + 2; ++i) {
-        cout << "line " << i << ":\n";
-        double time = solve_and_check(x, i);
-        times.push_back(time);
-    }
-
-    cout << "Loaded  " <<  x.num_puzzles << " puzzles from " << filename <<" in ";
-    print_time(read_time);
-
-    print_stats(times);
-    cout << "Total solving time including printing overhead: " << (std::chrono::system_clock::now() - solving_start).count() / 1000000.0 << " ms" << std::endl;
-    print_memory_usage();
-
-}
 
