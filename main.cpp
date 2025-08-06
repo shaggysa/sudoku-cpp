@@ -345,6 +345,7 @@ public:
         cout << "Loaded  " <<  x.num_puzzles << " puzzles from " << filename <<" in ";
         print_time(read_time);
         speedtest_async(x);
+        speedtest_sequential(x);
     }
 
 
