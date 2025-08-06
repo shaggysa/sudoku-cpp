@@ -9,6 +9,8 @@
 #include <bits/stdc++.h>
 #include <sys/resource.h>
 
+
+
 namespace fs = std::filesystem;
 
 using std::string, std::cout, std::cerr, std::ifstream, std::vector, std::stringstream, std::array;
@@ -24,6 +26,8 @@ struct puzzle {
 
 class puzzle_reader {
     public:
+        vector<array<char, 81>> unsolved_puzzles;
+        vector<array<char, 81>> solved_puzzles;
         int num_puzzles = 0;
 
         explicit puzzle_reader(const string& filename) {
@@ -65,9 +69,6 @@ class puzzle_reader {
         return this->solved_puzzles[line_numer-2];
     }
 
-    private:
-    vector<array<char, 81>> unsolved_puzzles;
-    vector<array<char, 81>> solved_puzzles;
 
 };
 
@@ -193,7 +194,6 @@ public:
                     p.puzz[spot] = p.possibilities[position][p.current_pos[position]];
                     found = true;
                     ++position;
-                    progressed_forward = true;
                     break;
                 }
             }
@@ -202,6 +202,8 @@ public:
                 p.current_pos[position] = -1;
                 --position;
                 progressed_forward = false;
+            } else {
+                progressed_forward = true;
             }
 
         }
@@ -220,17 +222,13 @@ public:
         }
     }
 
-    static double solve_and_check(const puzzle_reader &puzzles, const int line_number) {
-        cout << "Unsolved:\n";
-        print_puzzle(puzzles.get_unsolved(line_number));
+    static double solve_and_check(const array<char,81> &puzz, const array<char,81> &solved) {
         auto start = std::chrono::system_clock::now();
-        array<char,81> solved = puzzle_solver::solve(puzzles.get_unsolved(line_number));
+        array<char,81> solved_puzz = solve(puzz);
         auto time = (std::chrono::system_clock::now() - start).count()/1000000.0;
-        cout << "\nSolved:\n";
-        print_puzzle(solved);
-        if (!(solved == puzzles.get_solved(line_number))) {
-            cerr << "Solve failed\n";
-            throw::std::runtime_error("Solve failed");
+        if (solved_puzz != solved) {
+            cerr << "solved puzzles do not match!\n";
+            exit(-1);
         }
         return time;
     }
@@ -290,6 +288,50 @@ public:
         }
     }
 
+    void speedtest_sequential(const puzzle_reader& reader) {
+        cout << "Starting Sequential Speedtest:\n---------------\n";
+        auto solving_start = std::chrono::system_clock::now();
+        vector<double> times {};
+        for (int i = 0; i < reader.num_puzzles; i++) {
+            double time = puzzle_solver::solve_and_check(reader.get_unsolved(i+2), reader.get_solved(i+2));
+            times.push_back(time);
+        }
+
+        print_stats(times);
+        cout << "Total time elapsed: \n";
+        print_time((std::chrono::system_clock::now() - solving_start).count() / 1000000.0);
+        print_memory_usage();
+    }
+
+    void speedtest_async(puzzle_reader &reader) {
+        cout << "Starting Async Speedtest:\n---------------\n";
+        auto solving_start = std::chrono::system_clock::now();
+        size_t num_threads = std::thread::hardware_concurrency();
+        size_t chunk_size = reader.num_puzzles/num_threads;
+        vector<double> times(reader.num_puzzles);
+        vector<std::thread> threads;
+
+        for (size_t t = 0; t < num_threads; ++t) {
+            size_t start = t * chunk_size;
+            size_t end = (t == num_threads - 1) ? reader.num_puzzles : start + chunk_size;
+
+            threads.emplace_back([&,start,end]() {
+               for (size_t i = start; i < end; i++) {
+                   times[i] = puzzle_solver::solve_and_check(reader.get_unsolved(i+2), reader.get_solved(i+2));
+               }
+            });
+        }
+            for (auto& thread : threads) {
+                thread.join();
+            }
+
+
+        print_stats(times);
+        cout << "Total time elapsed: \n";
+        print_time((std::chrono::system_clock::now() - solving_start).count() / 1000000.0);
+        print_memory_usage();
+    }
+
     int main(const int argc, char *argv[]) {
         string filename;
         if (argc != 2) {
@@ -297,25 +339,12 @@ public:
         } else {
             filename = argv[1];
         }
-
         auto start = std::chrono::system_clock::now();
         puzzle_reader x = puzzle_reader(filename);
-        auto solving_start = std::chrono::system_clock::now();
         double read_time = (std::chrono::system_clock::now() - start).count()/1000000.0;
-        vector<double> times {};
-        for (int i = 2; i < x.num_puzzles + 2; ++i) {
-            cout << "line " << i << ":\n";
-            double time = puzzle_solver::solve_and_check(x, i);
-            times.push_back(time);
-        }
-
         cout << "Loaded  " <<  x.num_puzzles << " puzzles from " << filename <<" in ";
         print_time(read_time);
-
-        print_stats(times);
-        cout << "Total solving time including printing overhead: " << (std::chrono::system_clock::now() - solving_start).count() / 1000000.0 << " ms" << std::endl;
-        print_memory_usage();
-
+        speedtest_async(x);
     }
 
 
